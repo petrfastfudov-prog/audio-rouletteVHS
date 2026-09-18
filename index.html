@@ -527,30 +527,7 @@
   let typingTimeout = null;
   let remoteAudioFilterNode = null;
 
-  // РАСШИРЕННАЯ КОНФИГУРАЦИЯ С ТЕЛЕФОННЫМИ И СЕТЕВЫМИ РЕТРАНСЛЯТОРАМИ
-  const rtcConfig = {
-      iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun.stunprotocol.org:3478' },
-          { urls: 'stun:global.stun.twilio.com:3478' },
-          {
-              urls: 'turn:openrelay.metered.ca:80',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-          },
-          {
-              urls: 'turn:openrelay.metered.ca:443',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-          },
-          {
-              urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-              username: 'openrelayproject',
-              credential: 'openrelayproject'
-          }
-      ]
-  };
+  const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
   if (wasInCall) {
     statusTitle.textContent = 'Переподключение...';
@@ -736,7 +713,17 @@
       getAudioContext();
       if (!localStream) {
         const deviceId = audioSelect.value;
-        const constraints = { audio: deviceId ? { deviceId: { exact: deviceId } } : true, video: false };
+        const constraints = { 
+          audio: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000,
+            channelCount: 1
+          }, 
+          video: false 
+        };
         localStream = await navigator.mediaDevices.getUserMedia(constraints);
         getDevices();
       }
@@ -822,7 +809,17 @@
     currentPartnerId = data.partnerId;
     try {
       if (!localStream) {
-        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const constraints = { 
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000,
+            channelCount: 1
+          }, 
+          video: false 
+        };
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
         getDevices();
       }
       setUIState('in_call');
