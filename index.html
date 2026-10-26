@@ -1185,9 +1185,10 @@
   // Новый стабильный remote audio element
   let remoteAudioElement = null;
 
-  // Очередь ICE-кандидатов.
-  // Это важно: кандидат может прийти раньше offer/answer.
+  // Очереди сигналов: ICE-кандидаты могут прийти раньше SDP,
+  // а offer/answer иногда успевает прийти до создания PeerConnection.
   let pendingIceCandidates = [];
+  let pendingSignalingMessages = [];
 
   // Несколько STUN-серверов вместо одного.
   // TURN здесь пока не добавлен, поэтому на некоторых очень
@@ -2122,6 +2123,14 @@
         }
       };
 
+    peerConnection.onicecandidateerror = (event) => {
+      console.warn('[WEBRTC] ICE candidate error', {
+        url: event.url,
+        errorCode: event.errorCode,
+        errorText: event.errorText
+      });
+    };
+
     peerConnection.oniceconnectionstatechange =
       () => {
         if (!peerConnection) {
@@ -2133,6 +2142,14 @@
           peerConnection.iceConnectionState
         );
       };
+
+    // Обрабатываем сигналы, которые успели прийти до создания PeerConnection.
+    if (pendingSignalingMessages.length) {
+      const queuedSignals = pendingSignalingMessages.splice(0);
+      queuedSignals.forEach(message => {
+        Promise.resolve().then(() => handleSignalData(message));
+      });
+    }
 
     /*
      * Если мы инициатор, создаём offer.
@@ -2268,9 +2285,7 @@
   /*
    * Главный сигналинг.
    */
-  socket.on(
-    'signal',
-    async (data) => {
+  async function handleSignalData(data) {
       const signal =
         data && data.signal
           ? data.signal
@@ -2435,14 +2450,34 @@
 
         return;
       }
+  }
+
+  socket.on('signal', (data) => {
+    const signal = data && data.signal ? data.signal : null;
+    if (!signal) return;
+
+    // Текст и индикатор печати не требуют WebRTC-соединения.
+    if (signal.chatText || signal.typing !== undefined) {
+      handleSignalData(data);
+      return;
     }
-  );
+
+    // Не теряем SDP/ICE, если сигнал пришёл чуть раньше PeerConnection.
+    if (!peerConnection && (signal.desc || signal.candidate)) {
+      pendingSignalingMessages.push(data);
+      console.warn('[WEBRTC] Signal queued until PeerConnection is ready');
+      return;
+    }
+
+    handleSignalData(data);
+  });
 
   /*
    * Очистка звонка.
    */
   function cleanupCall() {
     pendingIceCandidates = [];
+    pendingSignalingMessages = [];
 
     if (remoteAudioFilterNode) {
       try {
@@ -2474,6 +2509,7 @@
         peerConnection.onicecandidate = null;
         peerConnection.onconnectionstatechange = null;
         peerConnection.oniceconnectionstatechange = null;
+        peerConnection.onicecandidateerror = null;
         peerConnection.close();
       } catch (e) {}
 
