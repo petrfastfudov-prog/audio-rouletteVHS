@@ -2011,62 +2011,24 @@
           remoteAudioElement
         );
 
-        let webAudioWorked = false;
-
-        try {
-          const ctx =
-            getAudioContext();
-
-          if (ctx.state === 'suspended') {
-            await ctx.resume();
-          }
-
-          const source =
-            ctx.createMediaStreamSource(
-              remoteStream
-            );
-
-          remoteAudioFilterNode =
-            ctx.createBiquadFilter();
-
-          updateAudioFilterMode();
-
-          source.connect(
-            remoteAudioFilterNode
-          );
-
-          remoteAudioFilterNode.connect(
-            ctx.destination
-          );
-
-          webAudioWorked = true;
-
-          remoteAudioElement.muted = true;
-
-        } catch (e) {
-          console.warn(
-            '[WEBRTC] WebAudio output failed, using audio element:',
-            e
-          );
-
-          webAudioWorked = false;
-          remoteAudioElement.muted = false;
-        }
+        // Воспроизводим входящий поток напрямую через audio element.
+        // Это исключает ситуацию, когда WebAudio-граф создан,
+        // но звук остаётся заглушённым или не доходит до выхода.
+        remoteAudioElement.muted = false;
+        remoteAudioElement.volume = 1;
 
         try {
           await remoteAudioElement.play();
-
-          console.log(
-            '[WEBRTC] Remote audio playback started',
-            {
-              webAudio: webAudioWorked
-            }
-          );
+          console.log('[WEBRTC] Remote audio playback started directly');
         } catch (e) {
-          console.warn(
-            '[WEBRTC] audio.play() blocked:',
-            e
-          );
+          console.warn('[WEBRTC] audio.play() blocked:', e);
+          // Некоторые браузеры требуют жест пользователя для запуска звука.
+          remoteAudioElement.muted = false;
+          remoteAudioElement.addEventListener('canplay', () => {
+            remoteAudioElement.play().catch(err => {
+              console.warn('[WEBRTC] Playback retry failed:', err);
+            });
+          }, { once: true });
         }
       };
 
